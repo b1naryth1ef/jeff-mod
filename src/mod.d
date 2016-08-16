@@ -2,56 +2,65 @@ module mod;
 
 import std.conv;
 
-import jeff.perms;
-import dscord.core;
+import dscord.core,
+       jeff.main,
+       jeff.perms;
 
 class ModPlugin : Plugin, UserGroupGetter {
   VibeJSON perms;
+  int[string] groups;
 
   this() {
     auto opts = new PluginOptions;
     opts.useStorage = true;
+    opts.useConfig = true;
     super(opts);
   }
 
   override void load(Bot bot, PluginState state = null) {
     super.load(bot, state);
     this.perms = this.storage.ensureObject("perms");
+
+    if (this.config.has("groups")) {
+      foreach (string k, VibeJSON v; this.config["groups"]) {
+        this.groups[k] = v.get!int;
+      }
+    }
   }
 
-  UserGroup getGroup(User u) {
+  int getGroup(User u) {
     if (!(u.id.to!string in this.perms)) {
-      return UserGroup.DEFAULT;
+      return 0;
     }
 
-    return this.perms[u.id.to!string].get!UserGroup;
+    return this.perms[u.id.to!string].get!int;
   }
 
   @Command("set")
   @CommandGroup("group")
   @CommandDescription("set a users group")
-  @CommandLevel(UserGroup.ADMIN)
+  @CommandLevel(Level.ADMIN)
   void setUserGroup(CommandEvent e) {
     if (e.msg.mentions.length != 2) {
-      e.msg.reply("Must supply one user and one group!");
+      e.msg.reply("Must supply one user and one group");
       return;
     }
 
-    auto group = getGroupByName(e.args[0]);
-    if (group == -1) {
+    // Check if the group exists
+    if (e.args[0] !in this.groups) {
       e.msg.replyf("Invalid group: `%s`", e.args[0]);
       return;
     }
 
     auto user = e.msg.mentions.values[1];
-    this.perms[user.id.to!string] = VibeJSON(group);
+    this.perms[user.id.to!string] = VibeJSON(this.groups[e.args[0]]);
     e.msg.replyf("Ok, added %s to group %s", user.username, e.args[0]);
   }
 
   @Command("get")
   @CommandGroup("group")
   @CommandDescription("get a users group")
-  @CommandLevel(UserGroup.MOD)
+  @CommandLevel(Level.MOD)
   void getUserGroup(CommandEvent e) {
     if (e.msg.mentions.length != 2) {
       e.msg.reply("Must supply one user to lookup!");
@@ -65,13 +74,44 @@ class ModPlugin : Plugin, UserGroupGetter {
       return;
     }
 
-    UserGroup group = this.perms[user.id.to!string].get!UserGroup;
-    e.msg.replyf("User %s is in group %s", user.username, group);
+    auto userLevel = this.perms[user.id.to!string].get!int;
+    foreach (name, level; this.groups) {
+      if (level == userLevel) {
+        e.msg.replyf("User %s is in group %s", user.username, level);
+        return;
+      }
+    }
+
+    e.msg.replyf("User %s has level %s", user.username, userLevel);
+  }
+
+  @Command("list")
+  @CommandGroup("group")
+  @CommandDescription("list all groups")
+  @CommandLevel(Level.MOD)
+  void getGroups(CommandEvent e) {
+    if (!this.groups.length) {
+      e.msg.replyf("No groups currently set.");
+      return;
+    }
+
+    MessageTable table = new MessageTable;
+
+    // Header
+    table.add("Name", "Level");
+
+    foreach (name, level; this.groups) {
+      table.add(name, level.toString);
+    }
+
+    MessageBuffer buffer = new MessageBuffer;
+    table.appendToBuffer(buffer);
+    e.msg.reply(buffer);
   }
 
   @Command("kick")
   @CommandDescription("kick a user")
-  @CommandLevel(UserGroup.MOD)
+  @CommandLevel(Level.MOD)
   void kickUser(CommandEvent e) {
     if (e.msg.mentions.length != 2) {
       e.msg.reply("Must supply user to kick!");
