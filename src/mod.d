@@ -98,15 +98,15 @@ class ModPlugin : Plugin, UserGroupGetter {
     MessageTable table = new MessageTable;
 
     // Header
-    table.add("Name", "Level");
+    table.setHeader("Name", "Level");
 
     foreach (name, level; this.groups) {
       table.add(name, level.toString);
     }
 
-    MessageBuffer buffer = new MessageBuffer;
-    table.appendToBuffer(buffer);
-    e.msg.reply(buffer);
+    // Sort by level
+    table.sort(1, (arg) => arg.to!int);
+    e.msg.reply(table);
   }
 
   @Command("kick")
